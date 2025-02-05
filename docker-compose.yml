@@ -103,8 +103,6 @@ services:
     networks:
       - default
       - web
-    profiles:
-      - dev
     # Make `docker compose attach web` work for debugging
     stdin_open: true
     tty: true
@@ -125,8 +123,6 @@ services:
       RAILS_ENV: production
     volumes:
       - .:/otwa
-    profiles:
-      - dev
 
   scheduler:
     image: otwarchive-web:latest
@@ -141,8 +137,6 @@ services:
       RAILS_ENV: production
     volumes:
       - .:/otwa
-    profiles:
-      - dev
 
   chrome:
     profiles:
@@ -178,8 +172,6 @@ services:
     restart: always
     environment:
       TZ: America/Los_Angeles
-    profiles:
-      - dev
 
 networks:
   default:
