@@ -3,7 +3,7 @@ require "active_support/core_ext/integer/time"
 Rails.application.configure do
   # Settings specified here will take precedence over those in config/application.rb.
 
-  config.hosts = ArchiveConfig.PERMITTED_HOSTS
+  config.hosts = [ IPAddr.new("0.0.0.0/0"), "localhost", *ArchiveConfig.PERMITTED_HOSTS ]
 
   # Code is not reloaded between requests.
   config.cache_classes = true
@@ -52,7 +52,7 @@ Rails.application.configure do
   # Include generic and useful information about system operation, but avoid logging too much
   # information to avoid inadvertent exposure of personally identifiable information (PII).
   # config.log_level = :info
-  config.log_level = :error
+  config.log_level = :debug
 
   # Prepend all log lines with the following tags.
   config.log_tags = [:request_id]
@@ -96,9 +96,9 @@ Rails.application.configure do
   config.active_record.dump_schema_after_migration = false
 
   # paperclip config
-  Paperclip::Attachment.default_options[:storage] = :s3
-  Paperclip::Attachment.default_options[:s3_credentials] = { s3_region: ENV["S3_REGION"],
-                                                             bucket: ENV["S3_BUCKET"],
-                                                             access_key_id: ENV["S3_ACCESS_KEY_ID"],
-                                                             secret_access_key: ENV["S3_SECRET_ACCESS_KEY"] }
+  Paperclip::Attachment.default_options[:storage] = :filesystem
+  # Paperclip::Attachment.default_options[:s3_credentials] = { s3_region: ENV["S3_REGION"],
+  #                                                            bucket: ENV["S3_BUCKET"],
+  #                                                            access_key_id: ENV["S3_ACCESS_KEY_ID"],
+  #                                                            secret_access_key: ENV["S3_SECRET_ACCESS_KEY"] }
 end
