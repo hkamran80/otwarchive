@@ -21,79 +21,134 @@
 # docker compose run --rm test bundle exec cucumber features/other_a/autocomplete.feature
 # ```
 
-volumes:
-  my-datavolume:
-  redis-data:
-  esdata1:
 services:
   db:
     image: mariadb:10.5.4-focal
-    environment:
-      - MYSQL_ROOT_PASSWORD=change_me
-    ports:
-      - "3306:3306"
     command:
       [
         "mysqld",
         "--sql-mode=STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION",
       ]
+    environment:
+      MYSQL_ROOT_PASSWORD: changeme
+    healthcheck:
+      test: mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD
+      start_period: 5s
+      interval: 30s
+      timeout: 10s
+      retries: 3
     volumes:
-      - my-datavolume:/var/lib/mysql:rw
+      - ../db:/var/lib/mysql:rw
+
   redis:
     image: redis:5
-    ports:
-      - "6379:6379"
     volumes:
-      - redis-data:/var/lib/redis:rw
+      - ../redis:/var/lib/redis:rw
+    healthcheck:
+      test: redis-cli ping | grep PONG || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   es:
     image: docker.elastic.co/elasticsearch/elasticsearch:7.17.26
-    ports:
-      - "9200:9200"
-      - "9300:9300"
-      - "9400:9400"
+    healthcheck:
+      test: curl -s http://localhost:9200 >/dev/null || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
     volumes:
-      - esdata1:/usr/share/elasticsearch/data:rw
+      - ../es:/usr/share/elasticsearch/data:rw
     environment:
-      - transport.host=localhost
-      - bootstrap.memory_lock=false
-      - "ES_JAVA_OPTS=-Xms1500m -Xmx1500m"
-      - discovery.type=single-node
+      transport.host: localhost
+      bootstrap.memory_lock: false
+      ES_JAVA_OPTS: "-Xms1500m -Xmx1500m"
+      discovery.type: single-node
       # Silence "security features are not enabled" warnings
       # https://github.com/elastic/elasticsearch/issues/78500
-      - xpack.security.enabled=false
+      xpack.security.enabled: false
+
   mc:
     image: memcached:1.5
-    ports:
-      - "11211:11211"
+    healthcheck:
+      test: echo "version" | (exec 3<>/dev/tcp/localhost/11211; cat >&3; timeout 0.1 cat <&3; exec 3<&-)
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   web:
-    profiles:
-      - dev
     build:
       context: .
       dockerfile: ./config/docker/Dockerfile
-    environment:
-      - RAILS_ENV=development
-      - GITPOD_WORKSPACE_ID=${GITPOD_WORKSPACE_ID:-}
-      - GITPOD_WORKSPACE_CLUSTER_HOST=${GITPOD_WORKSPACE_CLUSTER_HOST:-}
     command: bash -c "rm -f tmp/pids/server.pid && bundle exec rails s -p 3000 -b '0.0.0.0'"
-    volumes:
-      - .:/otwa
-    ports:
-      - "3000:3000"
     depends_on:
       - db
       - redis
       - es
       - mc
+    ports:
+      - "3007:3000"
+    environment:
+      # RAILS_ENV: development
+      RAILS_ENV: production
+      RAILS_SERVE_STATIC_FILES: true
+    healthcheck:
+      test: curl -s http://localhost:3000 >/dev/null || exit 1
+      start_period: 5s
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    volumes:
+      - .:/otwa
+    networks:
+      - default
+      - web
+    profiles:
+      - dev
     # Make `docker compose attach web` work for debugging
     stdin_open: true
     tty: true
+    labels:
+      caddy: ao3.boreas.planetkamran.com, ffa.boreas.planetkamran.com
+      caddy.reverse_proxy: "{{upstreams 3000}}"
+
+  worker:
+    image: otwarchive-web:latest
+    command: bash -c "QUEUE=* bundle exec rake environment resque:work --trace"
+    depends_on:
+      - db
+      - redis
+      - es
+      - mc
+      - web
+    environment:
+      RAILS_ENV: production
+    volumes:
+      - .:/otwa
+    profiles:
+      - dev
+
+  scheduler:
+    image: otwarchive-web:latest
+    command: bash -c "QUEUE=* bundle exec rake resque:scheduler --trace"
+    depends_on:
+      - db
+      - redis
+      - es
+      - mc
+      - worker
+    environment:
+      RAILS_ENV: production
+    volumes:
+      - .:/otwa
+    profiles:
+      - dev
+
   chrome:
     profiles:
       - test
     image: selenium/standalone-chromium
-    ports:
-      - "4444:4444"
+
   test:
     profiles:
       - test
@@ -108,11 +163,25 @@ services:
     command: bundle exec cucumber
     volumes:
       - .:/otwa
-    ports:
-      - "5100:5100"
     depends_on:
       - db
       - redis
       - es
       - mc
       - chrome
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run --token changeme2
+    depends_on:
+      - web
+    restart: always
+    environment:
+      TZ: America/Los_Angeles
+    profiles:
+      - dev
+
+networks:
+  default:
+  web:
+    external: true

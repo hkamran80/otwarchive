@@ -78,3 +78,8 @@ coverage
 redis-cucumber-dump.rdb
 
 .rspec
+
+# HK
+autoarchive.txt
+temp_authors*.txt
+docker-compose.red.yml
